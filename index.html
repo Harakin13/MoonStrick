@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-select=none">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Создай своего монстрика</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: rgba(87, 190, 255, 1.00);
+      background-image: url("https://i.ibb.co/x8GdbQW/blue-bubbles-2-wallpaper-1280x1024-Copy.jpg");
+      background-size: cover;
+      background-attachment: fixed;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      overflow-x: hidden;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: pan-y;
+    }
+
+    #wrapper {
+      margin: 0 auto;
+      width: 95%;
+      max-width: 600px;
+      padding: 10px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    header h2 {
+      margin-top: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      color: rgba(55, 55, 55, 1.00);
+      text-shadow: 2px 1px 2px rgba(0, 0, 0, 0.5);
+    }
+
+    header p {
+      padding: 15px 10px;
+      font-size: 16px;
+      color: #901d7e;
+      line-height: 1.4;
+    }
+
+    #partsDiv {
+      border: 2px solid white;
+      border-radius: 15px;
+      background-color: rgba(255, 255, 255, 0.31);
+      padding: 15px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      min-height: 200px;
+      transition: background-color 0.3s;
+    }
+
+    #partsDiv.dragging {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    #partsDiv img {
+      cursor: grab;
+      max-width: 60px;
+      height: auto;
+      touch-action: none;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+
+    #partsDiv img:active {
+      cursor: grabbing;
+    }
+
+    /* A used part keeps its slot (so the tray never resizes) but disappears visually */
+    #partsDiv img.used {
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    #monsterDiv {
+      border: 2px solid white;
+      border-radius: 15px;
+      padding: 30px 10px;
+      position: relative;
+      min-height: 350px;
+      background-color: rgba(255, 255, 255, 0.1);
+      overflow: visible;
+      touch-action: none;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+    }
+
+    #monsterDiv > img {
+      width: 30%;
+      max-width: 150px;
+      height: auto;
+      transition: transform 0.2s;
+    }
+
+    .itemMove {
+      position: fixed;
+      cursor: grab;
+      touch-action: none;
+      z-index: 1000;
+      transition: opacity 0.2s;
+      pointer-events: none;
+    }
+
+    .itemMove.dragging {
+      opacity: 0.9;
+      transform: scale(1.1);
+    }
+
+    /* Once dropped on the monster, a part becomes a real child of
+       #monsterDiv, positioned in % relative to it — so it moves with
+       the monster instead of drifting on resize/scroll. */
+    .placedPart {
+      position: absolute;
+      height: auto;
+      pointer-events: none;
+      z-index: 10;
+      transform-origin: center bottom;
+      animation: gluePop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    @keyframes gluePop {
+      0% { transform: scale(0.5); opacity: 0.4; }
+      70% { transform: scale(1.12); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .active {
+      transform: scale(1.05) rotate(2deg);
+    }
+
+    .btn-container {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 20px 0;
+    }
+
+    .btn {
+      outline: none;
+      border: 2px solid #fff;
+      padding: 12px 24px;
+      background-color: #901d7e;
+      border-radius: 25px;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.2s;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      touch-action: manipulation;
+      pointer-events: auto;
+      z-index: 9999;
+      position: relative;
+    }
+
+    .btn:active {
+      background-color: #1858af;
+      transform: scale(0.95);
+    }
+
+    .btn-done {
+      background-color: #2fae82;
+    }
+
+    .btn-done:active {
+      background-color: #1c7d5c;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translateX(-2px); }
+      20%, 80% { transform: translateX(4px); }
+      30%, 50%, 70% { transform: translateX(-6px); }
+      40%, 60% { transform: translateX(6px); }
+    }
+
+    .btn.shake {
+      animation: shake 0.5s;
+    }
+
+    .instructions {
+      background-color: rgba(255, 255, 255, 0.5);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 15px;
+      font-size: 14px;
+      text-align: center;
+      color: #333;
+    }
+
+    /* ---- Save / TA-DA modal ---- */
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background-color: rgba(25, 35, 55, 0.55);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      z-index: 10000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-card {
+      background-color: #fdfdfd;
+      border-radius: 20px;
+      border: 3px solid #ffffff;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      padding: 25px 20px;
+      max-width: 380px;
+      width: 100%;
+      text-align: center;
+      position: relative;
+      transform: scale(0.85) translateY(10px);
+      opacity: 0;
+      transition: transform 0.3s, opacity 0.3s;
+    }
+
+    .modal-overlay.open .modal-card {
+      transform: scale(1) translateY(0);
+      opacity: 1;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      background: none;
+      border: none;
+      font-size: 18px;
+      color: #901d7e;
+      cursor: pointer;
+      padding: 6px 10px;
+    }
+
+    .confetti {
+      font-size: 22px;
+      letter-spacing: 6px;
+      margin-bottom: 6px;
+      animation: confettiWiggle 1.6s ease-in-out infinite;
+    }
+
+    @keyframes confettiWiggle {
+      0%, 100% { transform: translateY(0) rotate(-3deg); }
+      50% { transform: translateY(-4px) rotate(3deg); }
+    }
+
+    .modal-card h3 {
+      font-size: 22px;
+      color: #901d7e;
+      margin-bottom: 6px;
+    }
+
+    .modal-card p {
+      font-size: 14px;
+      color: #555;
+      margin-bottom: 14px;
+    }
+
+    .monster-preview {
+      background-color: rgba(87, 190, 255, 0.15);
+      border-radius: 14px;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+      padding: 8px;
+    }
+
+    .monster-preview img {
+      max-width: 100%;
+      border-radius: 10px;
+      display: block;
+    }
+
+    .preview-loading {
+      font-size: 13px;
+      color: #777;
+      padding: 10px;
+    }
+
+    .modal-card label {
+      display: block;
+      font-size: 13px;
+      color: #333;
+      margin-bottom: 6px;
+      text-align: left;
+    }
+
+    #monsterName {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 2px solid #57beff;
+      font-size: 15px;
+      margin-bottom: 16px;
+      text-align: center;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .modal-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 480px) {
+      header h2 {
+        font-size: 20px;
+        margin-top: 10px;
+      }
+
+      header p {
+        font-size: 14px;
+        padding: 10px 5px;
+      }
+
+      #partsDiv img {
+        max-width: 50px;
+      }
+
+      #monsterDiv {
+        min-height: 300px;
+        padding: 20px 5px;
+      }
+
+      .btn {
+        font-size: 14px;
+        padding: 10px 20px;
+      }
+
+      .modal-card {
+        padding: 20px 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="wrapper">
+    <header>
+      <h2>Создай своего страшного монстрика 💙</h2>
+      <p>Перетаскивай детали пальцем, чтобы создать монстрика</p>
+    </header>
+
+    <div class="instructions">
+      👆 Нажми и перетащи детали на монстров внизу, а когда закончишь — жми «Готово»!
+    </div>
+
+    <div id="partsDiv">
+      <img src="https://i.ibb.co/nQ6L5nk/oci1.png" id="oci1" alt="глаза">
+      <img src="https://i.ibb.co/mNyxXyh/oci3.png" id="oci3" alt="глаза">
+      <img src="https://i.ibb.co/9t8RCGW/oci4.png" id="oci4" alt="глаза">
+      <img src="https://i.ibb.co/KG81kqh/oci5.png" id="oci5" alt="глаза">
+      <img src="https://i.ibb.co/br1b72Q/oci6.png" id="oci6" alt="глаза">
+      <img src="https://i.ibb.co/1MPmQkD/oci8.png" id="oci8" alt="глаза">
+      <img src="https://i.ibb.co/f48DRGz/oci2.png" id="oci2" alt="глаза">
+      <img src="https://i.ibb.co/DQv1ndY/naocare.png" id="naocare" alt="очки">
+      <img src="https://i.ibb.co/w0WBwb8/naocare2.png" id="naocare2" alt="очки">
+      <img src="https://i.ibb.co/pXZxtW2/usta1.png" id="usta1" alt="рот">
+      <img src="https://i.ibb.co/NSKStQW/usta2.png" id="usta2" alt="рот">
+      <img src="https://i.ibb.co/r6Xx0DR/usta4.png" id="usta4" alt="рот">
+      <img src="https://i.ibb.co/LCGGKd9/usta5.png" id="usta5" alt="рот">
+      <img src="https://i.ibb.co/xmcLkX8/usta6.png" id="usta6" alt="рот">
+      <img src="https://i.ibb.co/q1DJCFy/usta7.png" id="usta7" alt="рот">
+      <img src="https://i.ibb.co/d5q0csN/usta8.png" id="usta8" alt="рот">
+      <img src="https://i.ibb.co/KXGXDjP/masna.png" id="masna" alt="бант">
+      <img src="https://i.ibb.co/tM41KVp/rogovi.png" id="rogovi" alt="рога">
+      <img src="https://i.ibb.co/qg7d7kY/rogovi2.png" id="rogovi2" alt="рога">
+      <img src="https://i.ibb.co/XW6zp4D/sesir.png" id="sesir" alt="шляпа">
+      <img src="https://i.ibb.co/VgHwgxD/kosa.png" id="kosa" alt="волосы">
+    </div>
+
+    <div id="monsterDiv">
+      <img src="https://i.ibb.co/cg8mSWg/monster3.png" id="monster1" draggable="false" alt="монстр">
+      <img src="https://i.ibb.co/tcytcpj/monster2.png" id="monster2" draggable="false" alt="монстр">
+      <img src="https://i.ibb.co/cgW8dLH/monster4.png" id="monster3" draggable="false" alt="монстр">
+    </div>
+
+    <div class="btn-container">
+      <button class="btn btn-done" id="doneBtn">🎉 Готово!</button>
+      <button class="btn" id="resetBtn">🔄 Сброс</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card">
+      <button class="modal-close" id="modalClose" aria-label="Закрыть">✕</button>
+      <div class="confetti" aria-hidden="true">🎉✨🎊✨🎉</div>
+      <h3>✨ ТА-ДАААМ! ✨</h3>
+      <p>Знакомься — вот твой монстрик!</p>
+      <div class="monster-preview" id="monsterPreview">
+        <p class="preview-loading">Секундочку… 🪄</p>
+      </div>
+      <label for="monsterName" id="monsterNameLabel">Как его зовут?</label>
+      <input type="text" id="monsterName" placeholder="Например, Пупсик" maxlength="30">
+      <div class="modal-buttons">
+        <button class="btn" id="downloadBtn">📥 Скачать</button>
+        <button class="btn btn-done" id="newMonsterBtn">🔄 Новый монстрик</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    let currentDragElement = null;
+    let currentDragOriginal = null;
+    let currentZIndex = 100;
+    let offsetX = 0;
+    let offsetY = 0;
+    let lastPointerX = 0;
+    let lastPointerY = 0;
+    let placedCount = 0;
+    let lastCapturedDataUrl = null;
+
+    const monsterDiv = document.getElementById("monsterDiv");
+    const partsDiv = document.getElementById("partsDiv");
+    const parts = partsDiv.getElementsByTagName("img");
+    const monsters = monsterDiv.getElementsByTagName("img");
+    // Snapshot taken right now, before any decoration is dropped in —
+    // so this stays exactly the 3 original monster bodies (left/middle/
+    // right) forever, unlike `monsters` above which is a live list that
+    // will later also pick up every glued decoration.
+    const monsterBodies = Array.from(monsterDiv.querySelectorAll("img"));
+    const resetBtn = document.getElementById("resetBtn");
+    const doneBtn = document.getElementById("doneBtn");
+    const modalOverlay = document.getElementById("modalOverlay");
+    const modalClose = document.getElementById("modalClose");
+    const monsterPreview = document.getElementById("monsterPreview");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const newMonsterBtn = document.getElementById("newMonsterBtn");
+    const monsterNameInput = document.getElementById("monsterName");
+    const monsterNameLabel = document.getElementById("monsterNameLabel");
+    let isPluralNaming = false;
+
+    function getCoords(e) {
+      return e.touches ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : { x: e.clientX, y: e.clientY };
+    }
+
+    // Dragging a part now creates a floating clone and hides the original
+    // *in place* (visibility: hidden keeps its box, so the tray never
+    // grows/shrinks and #monsterDiv never jumps around).
+    function startDrag(e) {
+      e.preventDefault();
+
+      const original = this;
+      const coords = getCoords(e);
+      const rect = original.getBoundingClientRect();
+
+      const clone = original.cloneNode(true);
+      clone.removeAttribute("id");
+      clone.classList.add("itemMove", "dragging");
+      clone.style.width = rect.width + "px";
+      clone.style.left = rect.left + "px";
+      clone.style.top = rect.top + "px";
+      document.body.appendChild(clone);
+
+      original.classList.add("used");
+
+      partsDiv.classList.add("dragging");
+
+      currentDragElement = clone;
+      currentDragOriginal = original;
+      offsetX = coords.x - rect.left;
+      offsetY = coords.y - rect.top;
+
+      currentZIndex++;
+      clone.style.zIndex = currentZIndex;
+    }
+
+    function moveDrag(e) {
+      if (!currentDragElement) return;
+
+      e.preventDefault();
+      const coords = getCoords(e);
+      lastPointerX = coords.x;
+      lastPointerY = coords.y;
+
+      currentDragElement.style.left = (coords.x - offsetX) + "px";
+      currentDragElement.style.top = (coords.y - offsetY) + "px";
+
+      const elementBelow = document.elementFromPoint(coords.x, coords.y);
+
+      Array.from(monsters).forEach(m => m.classList.remove("active"));
+
+      if (elementBelow && elementBelow.parentNode === monsterDiv) {
+        elementBelow.classList.add("active");
+      }
+    }
+
+    // A part is "glued" only if it's released over #monsterDiv (with a
+    // little tolerance). It then becomes a REAL child of #monsterDiv,
+    // positioned in % relative to it — so from now on it scrolls and
+    // resizes together with the monster, instead of staying pinned to
+    // the viewport and drifting away the moment the page scrolls.
+    function tryGlueToMonster(clone) {
+      const pad = 30;
+      const monsterRect = monsterDiv.getBoundingClientRect();
+
+      const withinDropZone =
+        lastPointerX >= monsterRect.left - pad &&
+        lastPointerX <= monsterRect.right + pad &&
+        lastPointerY >= monsterRect.top - pad &&
+        lastPointerY <= monsterRect.bottom + pad;
+
+      if (!withinDropZone) return false;
+
+      clone.classList.remove("dragging");
+      const cloneRect = clone.getBoundingClientRect();
+
+      // Which monster body is this decoration actually sitting closest to?
+      // Needed later so the download can show just the monster(s) that
+      // got decorated, and skip any body that was left untouched.
+      const decorCenterX = cloneRect.left + cloneRect.width / 2;
+      let nearestIdx = 0;
+      let nearestDist = Infinity;
+      monsterBodies.forEach((body, idx) => {
+        const bodyRect = body.getBoundingClientRect();
+        const bodyCenterX = bodyRect.left + bodyRect.width / 2;
+        const dist = Math.abs(bodyCenterX - decorCenterX);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestIdx = idx;
+        }
+      });
+      clone.dataset.monsterIdx = String(nearestIdx);
+
+      const widthPercent = (cloneRect.width / monsterRect.width) * 100;
+      let leftPercent = ((cloneRect.left - monsterRect.left) / monsterRect.width) * 100;
+      let topPercent = ((cloneRect.top - monsterRect.top) / monsterRect.height) * 100;
+
+      // Keep the part fully inside #monsterDiv's own box so it never
+      // gets cropped out of the download screenshot later.
+      leftPercent = Math.max(0, Math.min(leftPercent, 100 - widthPercent));
+      topPercent = Math.max(0, Math.min(topPercent, 92));
+
+      clone.classList.remove("itemMove");
+      clone.classList.add("placedPart");
+      clone.style.zIndex = "";
+      clone.style.width = widthPercent + "%";
+      clone.style.left = leftPercent + "%";
+      clone.style.top = topPercent + "%";
+
+      monsterDiv.appendChild(clone);
+      placedCount++;
+      return true;
+    }
+
+    function endDrag(e) {
+      if (currentDragElement) {
+        const clone = currentDragElement;
+        const glued = tryGlueToMonster(clone);
+
+        if (!glued) {
+          // Missed the monster — give the piece back to the tray instead
+          // of leaving it floating on the screen forever.
+          clone.remove();
+          if (currentDragOriginal) {
+            currentDragOriginal.classList.remove("used");
+          }
+        }
+      }
+      partsDiv.classList.remove("dragging");
+      Array.from(monsters).forEach(m => m.classList.remove("active"));
+      currentDragElement = null;
+      currentDragOriginal = null;
+    }
+
+    Array.from(parts).forEach(part => {
+      part.addEventListener("touchstart", startDrag, { passive: false });
+      part.addEventListener("mousedown", startDrag);
+    });
+
+    document.addEventListener("touchmove", moveDrag, { passive: false });
+    document.addEventListener("touchend", endDrag, { passive: false });
+    document.addEventListener("touchcancel", endDrag, { passive: false });
+    document.addEventListener("mousemove", moveDrag);
+    document.addEventListener("mouseup", endDrag);
+
+    function doReset(e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      endDrag();
+      setTimeout(() => location.reload(), 100);
+    }
+
+    resetBtn.addEventListener("touchstart", doReset, { passive: false });
+    resetBtn.addEventListener("click", doReset);
+
+    document.addEventListener("gesturestart", e => e.preventDefault());
+
+    // ---- Save / TA-DA ----
+
+    // Which monster indices (0/1/2) actually have at least one decoration
+    // glued onto them. Used both for the smart crop below and for the
+    // "его/их" wording in the naming step.
+    function getDecoratedMonsterIndices() {
+      const indices = new Set();
+      monsterDiv.querySelectorAll(".placedPart").forEach((part) => {
+        const idx = Number(part.dataset.monsterIdx);
+        if (!Number.isNaN(idx) && monsterBodies[idx]) indices.add(idx);
+      });
+      return indices;
+    }
+
+    // Placed decorations are now real children of #monsterDiv, so we can
+    // screenshot that element directly. This is what stops the preview
+    // from ever capturing the modal itself: the modal lives outside
+    // #monsterDiv entirely, so it simply isn't part of what gets drawn.
+    //
+    // On top of that: we only want the monster(s) that actually got
+    // decorated to end up in the final picture. If just the left one was
+    // dressed up, ship only the left one. If left + right were dressed
+    // up but the middle one was left blank, ship left + right side by
+    // side with the untouched middle one cut out entirely — not just a
+    // wide shot with a naked monster awkwardly in the middle.
+    async function buildDownloadCanvas() {
+      const scale = 2;
+      const fullCanvas = await html2canvas(monsterDiv, {
+        backgroundColor: "#eaf7ff",
+        useCORS: true,
+        scale,
+        ignoreElements: (el) => el === modalOverlay
+      });
+
+      const monsterDivRect = monsterDiv.getBoundingClientRect();
+      const containerWidth = monsterDivRect.width;
+      const decoratedIdx = getDecoratedMonsterIndices();
+
+      // Horizontal span (in css px, relative to #monsterDiv) that each
+      // monster body occupies, widened to also cover every decoration
+      // glued onto it — so a cropped shot never slices off a horn or hat.
+      const spans = monsterBodies.map((body) => {
+        const r = body.getBoundingClientRect();
+        return {
+          left: r.left - monsterDivRect.left,
+          right: r.right - monsterDivRect.left,
+          decorated: false
+        };
+      });
+
+      monsterDiv.querySelectorAll(".placedPart").forEach((part) => {
+        const idx = Number(part.dataset.monsterIdx);
+        if (Number.isNaN(idx) || !spans[idx]) return;
+        const leftPx = (parseFloat(part.style.left) / 100) * containerWidth;
+        const widthPx = (parseFloat(part.style.width) / 100) * containerWidth;
+        spans[idx].left = Math.min(spans[idx].left, leftPx);
+        spans[idx].right = Math.max(spans[idx].right, leftPx + widthPx);
+      });
+
+      spans.forEach((s, idx) => { s.decorated = decoratedIdx.has(idx); });
+      const decoratedSpans = spans.filter(s => s.decorated);
+
+      // All three dressed up (or, as a safety net, none tagged for some
+      // reason) — the plain full-container shot already shows exactly
+      // that, nothing to cut.
+      if (decoratedSpans.length === 0 || decoratedSpans.length === monsterBodies.length) {
+        return fullCanvas;
+      }
+
+      const pad = 18;  // css px breathing room around each cropped monster
+      const gap = 26;  // css px gap between the separated monsters in the result
+
+      const crops = decoratedSpans
+        .map(s => ({
+          left: Math.max(0, s.left - pad),
+          right: Math.min(containerWidth, s.right + pad)
+        }))
+        .sort((a, b) => a.left - b.left)
+        .map(c => ({ sx: c.left * scale, sw: (c.right - c.left) * scale }));
+
+      const gapPx = gap * scale;
+      const totalWidth = crops.reduce((sum, c) => sum + c.sw, 0) + gapPx * (crops.length - 1);
+
+      const out = document.createElement("canvas");
+      out.width = Math.round(totalWidth);
+      out.height = fullCanvas.height;
+      const ctx = out.getContext("2d");
+      ctx.fillStyle = "#eaf7ff";
+      ctx.fillRect(0, 0, out.width, out.height);
+
+      let dx = 0;
+      crops.forEach((c) => {
+        ctx.drawImage(fullCanvas, c.sx, 0, c.sw, fullCanvas.height, dx, 0, c.sw, fullCanvas.height);
+        dx += c.sw + gapPx;
+      });
+
+      return out;
+    }
+
+    async function captureMonsterImage() {
+      const canvas = await buildDownloadCanvas();
+      return canvas.toDataURL("image/png");
+    }
+
+    async function openModal(e) {
+      e.preventDefault();
+
+      if (placedCount === 0) {
+        doneBtn.classList.add("shake");
+        setTimeout(() => doneBtn.classList.remove("shake"), 500);
+        return;
+      }
+
+      isPluralNaming = getDecoratedMonsterIndices().size > 1;
+      monsterNameLabel.textContent = isPluralNaming ? "Как их зовут?" : "Как его зовут?";
+      monsterNameInput.placeholder = isPluralNaming ? "Например, Вупсень и Пупсень" : "Например, Пупсик";
+
+      modalOverlay.classList.add("open");
+      monsterPreview.innerHTML = '<p class="preview-loading">Секундочку… 🪄</p>';
+      downloadBtn.disabled = true;
+      lastCapturedDataUrl = null;
+
+      try {
+        lastCapturedDataUrl = await captureMonsterImage();
+        monsterPreview.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = lastCapturedDataUrl;
+        img.alt = "Твой монстрик";
+        monsterPreview.appendChild(img);
+      } catch (err) {
+        monsterPreview.innerHTML = '<p class="preview-loading">Превью не загрузилось 😢 Но попробовать скачать всё равно можно</p>';
+      } finally {
+        downloadBtn.disabled = false;
+      }
+    }
+
+    function closeModal(e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      modalOverlay.classList.remove("open");
+    }
+
+    function downloadMonster(e) {
+      e.preventDefault();
+      if (!lastCapturedDataUrl) return;
+
+      const name = (monsterNameInput.value || (isPluralNaming ? "монстрики" : "монстрик")).trim();
+      const link = document.createElement("a");
+      link.download = name + ".png";
+      link.href = lastCapturedDataUrl;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    function newMonster(e) {
+      closeModal(e);
+      doReset(e);
+    }
+
+    doneBtn.addEventListener("click", openModal);
+    doneBtn.addEventListener("touchstart", openModal, { passive: false });
+
+    modalClose.addEventListener("click", closeModal);
+    modalClose.addEventListener("touchstart", closeModal, { passive: false });
+
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target === modalOverlay) closeModal(e);
+    });
+
+    downloadBtn.addEventListener("click", downloadMonster);
+    downloadBtn.addEventListener("touchstart", downloadMonster, { passive: false });
+
+    newMonsterBtn.addEventListener("click", newMonster);
+    newMonsterBtn.addEventListener("touchstart", newMonster, { passive: false });
+  </script>
+</body>
+</html>
