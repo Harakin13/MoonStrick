@@ -434,12 +434,13 @@
     </div>
   </div>
 
-  <!-- html2canvas-pro: тот же API, что и оригинальный html2canvas, но умеет
-       парсить современные цветовые функции (oklch/oklab/lab/lch), которые
-       свежий Chrome иногда отдаёт в computed styles и на которых падал
-       оригинальный html2canvas 1.4.1 с ошибкой
-       "Attempting to parse an unsupported color function". -->
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.11/dist/html2canvas-pro.min.js"></script>
+  <!-- html2canvas-pro removed: turned out to misrender #monsterDiv's
+       flexbox row as a vertical stack inside the exported picture, on
+       top of earlier CORS-cache and oklch() parsing crashes. The
+       download image is now composited by hand with plain Canvas 2D
+       (see buildDownloadCanvas below), which only needs to read the
+       already-correct on-screen positions, not re-derive layout. -->
+
   <script>
     let currentDragElement = null;
     let currentDragOriginal = null;
@@ -640,10 +641,17 @@
       return indices;
     }
 
-    // Placed decorations are now real children of #monsterDiv, so we can
-    // screenshot that element directly. This is what stops the preview
-    // from ever capturing the modal itself: the modal lives outside
-    // #monsterDiv entirely, so it simply isn't part of what gets drawn.
+    // We draw the picture ourselves, straight from the real, currently
+    // on-screen positions of the monster body + decoration <img>
+    // elements — instead of asking html2canvas(-pro) to re-implement
+    // browser layout and rasterize the DOM itself. That's turned out to
+    // be a recurring source of bugs (it doesn't render #monsterDiv's
+    // flexbox row layout correctly, stacking the monster bodies
+    // vertically inside the exported picture even though they sit
+    // side-by-side on the actual page). Since all we need is "draw a
+    // handful of already-loaded images at their known positions", plain
+    // Canvas 2D does the job directly and can't get the layout wrong —
+    // it isn't re-deriving the layout at all, just reading it.
     //
     // On top of that: we only want the monster(s) that actually got
     // decorated to end up in the final picture. If just the left one was
@@ -651,82 +659,98 @@
     // up but the middle one was left blank, ship left + right side by
     // side with the untouched middle one cut out entirely — not just a
     // wide shot with a naked monster awkwardly in the middle.
-    async function buildDownloadCanvas() {
+    function buildDownloadCanvas() {
       const scale = 2;
-      const fullCanvas = await html2canvas(monsterDiv, {
-        backgroundColor: "#eaf7ff",
-        useCORS: true,
-        scale,
-        ignoreElements: (el) => el === modalOverlay
-      });
-
       const monsterDivRect = monsterDiv.getBoundingClientRect();
-      const containerWidth = monsterDivRect.width;
+      const containerHeight = monsterDivRect.height;
       const decoratedIdx = getDecoratedMonsterIndices();
 
-      // Horizontal span (in css px, relative to #monsterDiv) that each
-      // monster body occupies, widened to also cover every decoration
-      // glued onto it — so a cropped shot never slices off a horn or hat.
-      const spans = monsterBodies.map((body) => {
+      const bodies = monsterBodies.map((body, idx) => {
         const r = body.getBoundingClientRect();
         return {
+          idx,
+          el: body,
           left: r.left - monsterDivRect.left,
-          right: r.right - monsterDivRect.left,
-          decorated: false
+          top: r.top - monsterDivRect.top,
+          width: r.width,
+          height: r.height,
+          decorated: decoratedIdx.has(idx)
         };
       });
 
-      monsterDiv.querySelectorAll(".placedPart").forEach((part) => {
-        const idx = Number(part.dataset.monsterIdx);
-        if (Number.isNaN(idx) || !spans[idx]) return;
-        const leftPx = (parseFloat(part.style.left) / 100) * containerWidth;
-        const widthPx = (parseFloat(part.style.width) / 100) * containerWidth;
-        spans[idx].left = Math.min(spans[idx].left, leftPx);
-        spans[idx].right = Math.max(spans[idx].right, leftPx + widthPx);
-      });
-
-      spans.forEach((s, idx) => { s.decorated = decoratedIdx.has(idx); });
-      const decoratedSpans = spans.filter(s => s.decorated);
-
-      // All three dressed up (or, as a safety net, none tagged for some
-      // reason) — the plain full-container shot already shows exactly
-      // that, nothing to cut.
-      if (decoratedSpans.length === 0 || decoratedSpans.length === monsterBodies.length) {
-        return fullCanvas;
-      }
+      const showAll = decoratedIdx.size === 0 || decoratedIdx.size === bodies.length;
+      const shownBodies = showAll ? bodies : bodies.filter(b => b.decorated);
 
       const pad = 18;  // css px breathing room around each cropped monster
       const gap = 26;  // css px gap between the separated monsters in the result
 
-      const crops = decoratedSpans
-        .map(s => ({
-          left: Math.max(0, s.left - pad),
-          right: Math.min(containerWidth, s.right + pad)
-        }))
-        .sort((a, b) => a.left - b.left)
-        .map(c => ({ sx: c.left * scale, sw: (c.right - c.left) * scale }));
+      // Each shown monster's own horizontal window (its body ∪ every
+      // decoration glued onto it), so a cropped shot never slices off a
+      // horn or hat — and, when showing all three, one single window
+      // spanning the whole container so nothing gets cut at all.
+      const windows = showAll
+        ? [{ idx: null, left: 0, right: monsterDivRect.width }]
+        : shownBodies.map((body) => {
+            let left = body.left;
+            let right = body.left + body.width;
+            monsterDiv.querySelectorAll(`.placedPart[data-monster-idx="${body.idx}"]`).forEach((part) => {
+              const r = part.getBoundingClientRect();
+              const partLeft = r.left - monsterDivRect.left;
+              const partRight = partLeft + r.width;
+              left = Math.min(left, partLeft);
+              right = Math.max(right, partRight);
+            });
+            return {
+              idx: body.idx,
+              left: Math.max(0, left - pad),
+              right: Math.min(monsterDivRect.width, right + pad)
+            };
+          });
 
       const gapPx = gap * scale;
-      const totalWidth = crops.reduce((sum, c) => sum + c.sw, 0) + gapPx * (crops.length - 1);
+      const totalWidth = windows.reduce((sum, w) => sum + (w.right - w.left) * scale, 0) + gapPx * (windows.length - 1);
 
       const out = document.createElement("canvas");
-      out.width = Math.round(totalWidth);
-      out.height = fullCanvas.height;
+      out.width = Math.max(1, Math.round(totalWidth));
+      out.height = Math.max(1, Math.round(containerHeight * scale));
       const ctx = out.getContext("2d");
       ctx.fillStyle = "#eaf7ff";
       ctx.fillRect(0, 0, out.width, out.height);
 
       let dx = 0;
-      crops.forEach((c) => {
-        ctx.drawImage(fullCanvas, c.sx, 0, c.sw, fullCanvas.height, dx, 0, c.sw, fullCanvas.height);
-        dx += c.sw + gapPx;
+      windows.forEach((win) => {
+        const winOffset = dx - win.left * scale;
+
+        const draw = (el) => {
+          const r = el.getBoundingClientRect();
+          const relLeft = r.left - monsterDivRect.left;
+          const relTop = r.top - monsterDivRect.top;
+          ctx.drawImage(
+            el,
+            relLeft * scale + winOffset,
+            relTop * scale,
+            r.width * scale,
+            r.height * scale
+          );
+        };
+
+        if (showAll) {
+          monsterBodies.forEach(draw);
+          monsterDiv.querySelectorAll(".placedPart").forEach(draw);
+        } else {
+          const body = bodies.find(b => b.idx === win.idx);
+          draw(body.el);
+          monsterDiv.querySelectorAll(`.placedPart[data-monster-idx="${win.idx}"]`).forEach(draw);
+        }
+
+        dx += (win.right - win.left) * scale + gapPx;
       });
 
       return out;
     }
 
     async function captureMonsterImage() {
-      const canvas = await buildDownloadCanvas();
+      const canvas = buildDownloadCanvas();
       // A Blob + object URL lives purely in page memory (not written to
       // disk, not written to any browser storage, not cached as a
       // resource by the network layer) and disappears the moment we
