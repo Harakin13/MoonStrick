@@ -434,7 +434,12 @@
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- html2canvas-pro: тот же API, что и оригинальный html2canvas, но умеет
+       парсить современные цветовые функции (oklch/oklab/lab/lch), которые
+       свежий Chrome иногда отдаёт в computed styles и на которых падал
+       оригинальный html2canvas 1.4.1 с ошибкой
+       "Attempting to parse an unsupported color function". -->
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas-pro@1.5.11/dist/html2canvas-pro.min.js"></script>
   <script>
     let currentDragElement = null;
     let currentDragOriginal = null;
